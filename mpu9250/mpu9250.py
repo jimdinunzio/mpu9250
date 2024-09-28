@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import smbus
+import math
 import numpy as np
 
 from .imusensor.MPU9250 import MPU9250
@@ -66,6 +67,10 @@ class MyPythonNode(Node):
         self.deltaTime = 0
         self.lastTime = self.get_clock().now()
 
+    def to_pi(self, angle):
+        # Wraps the given angle(s) to +/- pi.
+        return (angle + math.pi) % (2 * math.pi) - math.pi
+
     def publish_imu_values(self):
         self.imu.readSensor()
         #self.imu.computeOrientation()
@@ -84,6 +89,9 @@ class MyPythonNode(Node):
         pitch = self.sensorfusion.pitch
         roll = self.sensorfusion.roll
 
+        # Convert yaw to the ENU (East-North_Up):
+        yaw += 90.0
+
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self.get_parameter('frame_id')._value
         # Direct measurements
@@ -101,8 +109,8 @@ class MyPythonNode(Node):
         # Calculate euler angles, convert to quaternion and store in message
         msg.orientation_covariance = [0.0025, 0.0, 0.0, 0.0, 0.0025, 0.0, 0.0, 0.0, 0.0025]
         # Convert to quaternion
-        quat = tf_transformations.quaternion_from_euler(
-            radians(roll), radians(pitch), radians(yaw))
+        yaw_r = self.to_pi(radians(yaw))
+        quat = tf_transformations.quaternion_from_euler(radians(roll), radians(pitch), yaw_r)
         msg.orientation.x = quat[0]
         msg.orientation.y = quat[1]
         msg.orientation.z = quat[2]
@@ -110,7 +118,9 @@ class MyPythonNode(Node):
         self.publisher_imu_values_.publish(msg)
 
         if(self.get_parameter('print')._value) :
-            print("roll: {:8.2f} \tpitch : {:8.2f} \tyaw : {:8.2f}".format(self.sensorfusion.roll, self.sensorfusion.pitch, self.sensorfusion.yaw))
+            #print("roll: {:8.2f} \tpitch : {:8.2f} \tyaw : {:8.2f}".format(self.sensorfusion.roll, self.sensorfusion.pitch, self.sensorfusion.yaw))
+            #print("roll: {:8.2f} \tpitch : {:8.2f} \tyaw : {:8.2f}".format(roll, pitch, yaw_r))
+            print("yaw : {:8.2f}".format(yaw_r))
 
 def main(args=None):
     rclpy.init(args=args)
