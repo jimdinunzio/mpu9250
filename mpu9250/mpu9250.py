@@ -67,7 +67,7 @@ class MyPythonNode(Node):
         self.deltaTime = 0
         self.lastTime = self.get_clock().now()
 
-    def to_pi(self, angle):
+    def wrap_pi(self, angle):
         # Wraps the given angle(s) to +/- pi.
         return (angle + math.pi) % (2 * math.pi) - math.pi
 
@@ -109,7 +109,7 @@ class MyPythonNode(Node):
         # Calculate euler angles, convert to quaternion and store in message
         msg.orientation_covariance = [0.0025, 0.0, 0.0, 0.0, 0.0025, 0.0, 0.0, 0.0, 0.0025]
         # Convert to quaternion
-        yaw_r = self.to_pi(radians(yaw))
+        yaw_r = self.wrap_pi(radians(yaw))
         quat = tf_transformations.quaternion_from_euler(radians(roll), radians(pitch), yaw_r)
         msg.orientation.x = quat[0]
         msg.orientation.y = quat[1]
