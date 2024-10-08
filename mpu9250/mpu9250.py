@@ -25,6 +25,7 @@ class MyPythonNode(Node):
             namespace='',
             parameters=[
                 ('print', False),
+                ('calibrate', False),
                 ('frequency', 30),
                 ('frame_id', 'imu_link'),
                 ('i2c_address', 0x68),
@@ -38,6 +39,7 @@ class MyPythonNode(Node):
                     1.0, 0.0, 0.0,
                     0.0, 1.0, 0.0,
                     0.0, 0.0, 1.0]),
+                ('calib_data_file', "")
             ]
         )
 
@@ -52,24 +54,50 @@ class MyPythonNode(Node):
         self.imu.MagBias = np.asarray(self.get_parameter('magnetometer_bias')._value)
         self.imu.Magtransform = np.reshape(np.asarray(self.get_parameter('magnetometer_transform')._value),(3,3))
 
-        self.publisher_imu_values_ = self.create_publisher(Imu, "/imu", 10)
+        self.publisher_imu_values_ = self.create_publisher(Imu, "/imu/data", 10)
         self.timer_publish_imu_values_ = self.create_timer(
             1.0/self.get_parameter('frequency')._value, self.publish_imu_values)
+        self.calib_data_file = self.get_parameter('calib_data_file')._value
 
         self.sensorfusion = kalman.Kalman()
         #self.sensorfusion = madgwick.Madgwick(0.5)
         self.imu.begin()
+        if self.get_parameter('calibrate')._value:
+            self.get_logger().info("Calibrating Gyro, Keep sensor still.")
+            self.imu.caliberateGyro()
+            self.get_logger().info("Done calibrating Gyro.")
+            self.get_logger().info("Calibrating Magnetometer for 20s. Wave sensor in a figure 8.")
+            self.imu.caliberateMagApprox()
+            #self.imu.caliberateMagPrecise()
+            self.get_logger().info("Done calibrating Magnetometer.")
+            if len(self.calib_data_file) > 0:
+                self.imu.saveCalibDataToFile(self.calib_data_file)
+                self.get_logger().info("Saved calibration data to file.")
+        else:
+            if len(self.calib_data_file) > 0:
+                self.imu.loadCalibDataFromFile(self.calib_data_file)
+                self.get_logger().info("Loaded calibration data from file.")
         self.imu.readSensor()    
         self.imu.computeOrientation()
         self.sensorfusion.roll = self.imu.roll
         self.sensorfusion.pitch = self.imu.pitch
         self.sensorfusion.yaw = self.imu.yaw
+        self.do_apply_ema = self.declare_parameter('do_apply_ema', False).value
+        self.ema_alpha = self.declare_parameter('ema_alpha', 0.1).value
+        self.filtered_yaw = None
         self.deltaTime = 0
         self.lastTime = self.get_clock().now()
 
     def wrap_pi(self, angle):
         # Wraps the given angle(s) to +/- pi.
         return (angle + math.pi) % (2 * math.pi) - math.pi
+    
+    def apply_exponential_moving_average(self, new_value, prev_value):
+        """Apply the EMA to a given value."""
+        diff = new_value - prev_value
+        diff = self.wrap_pi(diff)
+        updated_value = prev_value + self.ema_alpha * diff
+        return self.wrap_pi(updated_value)
 
     def publish_imu_values(self):
         self.imu.readSensor()
@@ -110,6 +138,14 @@ class MyPythonNode(Node):
         msg.orientation_covariance = [0.0025, 0.0, 0.0, 0.0, 0.0025, 0.0, 0.0, 0.0, 0.0025]
         # Convert to quaternion
         yaw_r = self.wrap_pi(radians(yaw))
+
+        if self.do_apply_ema:
+            if self.filtered_yaw is None:
+                self.filtered_yaw = yaw_r
+            else:
+                self.filtered_yaw = self.apply_exponential_moving_average(yaw_r, self.filtered_yaw)
+                yaw_r = self.filtered_yaw
+
         quat = tf_transformations.quaternion_from_euler(radians(roll), radians(pitch), yaw_r)
         msg.orientation.x = quat[0]
         msg.orientation.y = quat[1]
@@ -120,7 +156,7 @@ class MyPythonNode(Node):
         if(self.get_parameter('print')._value) :
             #print("roll: {:8.2f} \tpitch : {:8.2f} \tyaw : {:8.2f}".format(self.sensorfusion.roll, self.sensorfusion.pitch, self.sensorfusion.yaw))
             #print("roll: {:8.2f} \tpitch : {:8.2f} \tyaw : {:8.2f}".format(roll, pitch, yaw_r))
-            print("yaw : {:8.2f}".format(yaw_r))
+            self.get_logger().info("yaw : {:8.2f}".format(yaw_r))
 
 def main(args=None):
     rclpy.init(args=args)
