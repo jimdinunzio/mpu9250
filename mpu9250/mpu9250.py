@@ -154,10 +154,8 @@ class MyPythonNode(Node):
         self.publisher_imu_values_.publish(msg)
 
         if(self.get_parameter('print')._value) :
-            #print("roll: {:8.2f} \tpitch : {:8.2f} \tyaw : {:8.2f}".format(self.sensorfusion.roll, self.sensorfusion.pitch, self.sensorfusion.yaw))
-            #print("roll: {:8.2f} \tpitch : {:8.2f} \tyaw : {:8.2f}".format(roll, pitch, yaw_r))
-            self.get_logger().info("yaw : {:8.2f}".format(yaw_r))
-
+            self.get_logger().info("(in degrees) roll: {:8.2f} \tpitch : {:8.2f} \tyaw : {:8.2f}".format(roll, pitch, yaw))
+            
 def main(args=None):
     rclpy.init(args=args)
     node = MyPythonNode()
